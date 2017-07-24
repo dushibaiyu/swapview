@@ -1,9 +1,9 @@
 #!/usr/bin/dmd -run
 
-import std.stdio, std.file, std.path, std.string, std.conv, std.math, std.container, std.algorithm;
+import std.stdio, std.file, std.path, std.string, std.conv, std.math, std.algorithm.sorting;
 
 string filesize(double size){
-    string units = "KMGT";
+    enum units = "KMGT";
     double left = size.fabs();
     int unit = -1;
 
@@ -22,19 +22,20 @@ string filesize(double size){
 }
 
 string getcmdln(string pid){
-    auto ret = cast(ubyte[]) read("/proc/"~pid~"/cmdline");
+    auto ret = cast(ubyte[])read(format("/proc/%s/cmdline", pid));
+    if(ret[$-1] == '\0')
+        ret = ret[0..($-1)];
+        
     foreach(ref ubyte c; ret){
         if(c=='\0') c=' ';
     }
-    if(ret[$-1] == ' ')
-        ret = ret[0 .. $-1];
-    ret ~= '\0';
+    
     return cast(string) ret;
 }
 
 double checkswap(string pid){
     double size = 0;
-    File file = File("/proc/"~pid~"/smaps", "r");
+    File file = File(format("/proc/%s/smaps", pid), "r");
     while (!file.eof()){
         string line = chomp(file.readln());
         if(!line.indexOf("Swap:")){
@@ -49,32 +50,30 @@ struct SwapInfo
     int pid;
     double size;
     string comm;
-
-    int opCmp(ref const SwapInfo s) const {
-        double r = size - s.size;
-        return (r > 0) - (r < 0);
-    }
-};
+}
 
 SwapInfo[] getSwap(){
     SwapInfo[] ret;
-    foreach(DirEntry dirs; dirEntries("/proc", SpanMode.shallow)){
+    auto dirEns = dirEntries("/proc", SpanMode.shallow);
+    foreach(DirEntry dirs; dirEns){
         string pid = baseName(dirs.name);
         if(pid.isNumeric()){
             try{
                 double size = checkswap(pid);
                 if(size)
                     ret ~= SwapInfo(to!int(pid), size, getcmdln(pid));
-            }catch(Exception){} // do nothing for error
+            }catch(Exception e){
+                writeln(e.toString());
+            }
         }
     }
-    sort(ret);
+    sort!"a.size < b.size"(ret);
     return ret;
 }
 
 
 void main(){
-    string m = "%5s %9s %s";
+    enum m = "%5s %9s %s";
     double total=0;
     auto result=getSwap();
     writeln(format(m , "PID", "SWAP", "COMMAND"));
